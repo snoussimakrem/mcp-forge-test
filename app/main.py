@@ -128,6 +128,41 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     )
 
 
+
+@app.get("/api/ci/{owner}/{repository_name}")
+def recent_ci_runs(owner: str, repository_name: str) -> dict:
+    """Return recent GitHub Actions workflow runs."""
+
+    repository = f"{owner}/{repository_name}"
+
+    try:
+        payload = GitHubReadClient(
+            settings.github_token
+        )._get(
+            f"/repos/{repository}/actions/runs?per_page=5"
+        )
+
+    except GitHubReadError as error:
+        raise HTTPException(
+            status_code=422,
+            detail=str(error),
+        ) from error
+
+    return {
+        "repository": repository,
+        "runs": [
+            {
+                "name": run["name"],
+                "status": run["status"],
+                "conclusion": run["conclusion"],
+                "branch": run["head_branch"],
+                "url": run["html_url"],
+            }
+            for run in payload.get("workflow_runs", [])
+        ],
+    }
+
+
 frontend_directory = Path(__file__).resolve().parents[1] / "frontend"
 
 app.mount(
