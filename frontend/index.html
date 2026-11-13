@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP Forge</title>
+
+  <style>
+    body {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      background: #090c17;
+      color: #edf2ff;
+      font-family: Arial, sans-serif;
+    }
+
+    input, textarea, button {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 8px 0;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #34496f;
+      background: #10182b;
+      color: white;
+    }
+
+    button {
+      background: #46dffb;
+      color: #031019;
+      border: 0;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      background: #10182b;
+      border-radius: 8px;
+      padding: 16px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>MCP Forge</h1>
+
+  <p>
+    Read-only GitHub repository analysis with Qdrant memory
+    and free AI reasoning.
+  </p>
+
+  <label>GitHub repository</label>
+  <input id="repository" value="snoussimakrem/mcp-forge-test">
+
+  <label>Engineering objective</label>
+  <textarea id="objective">
+Analyze this repository and identify safe engineering improvements.
+  </textarea>
+
+  <button onclick="analyzeRepository()">
+    Analyze repository
+  </button>
+
+  <pre id="result">Ready.</pre>
+
+  <script>
+    async function analyzeRepository() {
+      const result = document.getElementById("result");
+
+      result.textContent = "Analyzing repository...";
+
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          repository: document.getElementById("repository").value,
+          objective: document.getElementById("objective").value
+        })
+      });
+
+      const data = await response.json();
+      result.textContent = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
