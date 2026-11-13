@@ -6,9 +6,7 @@ class AnalyzeRequest(BaseModel):
         pattern=r"^[\w.-]+/[\w.-]+$",
         examples=["snoussimakrem/mcp-forge-test"],
     )
-
     ref: str = "main"
-
     objective: str = (
         "Analyze the repository and identify safe engineering improvements."
     )
@@ -27,3 +25,8 @@ class AnalyzeResponse(BaseModel):
     summary: str
     findings: list[Finding]
     write_actions_enabled: bool
+
+
+class ErrorResponse(BaseModel):
+    error_id: str
+    message: str

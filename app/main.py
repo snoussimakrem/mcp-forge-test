@@ -1,14 +1,26 @@
+import logging
+import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.models import AnalyzeRequest, AnalyzeResponse, Finding
+from app.models import (
+    AnalyzeRequest,
+    AnalyzeResponse,
+    ErrorResponse,
+    Finding,
+)
 from app.services.agent import summarize, propose_patch
 from app.services.github import GitHubReadClient, GitHubReadError
 from app.services.memory import MemoryStore
+from app.logging_config import configure_logging
 
+
+logger = configure_logging(settings.log_level)
 
 app = FastAPI(
     title="MCP Forge API",
@@ -19,6 +31,92 @@ memory = MemoryStore(
     collection=settings.qdrant_collection,
     url=settings.qdrant_url,
 )
+
+
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+
+    response = await call_next(request)
+
+    response.headers["X-Request-ID"] = request_id
+
+    logger.info(
+        "%s %s -> %s request_id=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        request_id,
+    )
+
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(
+    request: Request,
+    error: RequestValidationError,
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+
+    logger.warning(
+        "validation_error request_id=%s errors=%s",
+        request_id,
+        error.errors(),
+    )
+
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            error_id=request_id,
+            message="Validation error",
+        ).model_dump(),
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_error_handler(
+    request: Request,
+    error: HTTPException,
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+
+    logger.warning(
+        "http_error request_id=%s status=%s",
+        request_id,
+        error.status_code,
+    )
+
+    return JSONResponse(
+        status_code=error.status_code,
+        content=ErrorResponse(
+            error_id=request_id,
+            message=str(error.detail),
+        ).model_dump(),
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error_handler(
+    request: Request,
+    error: Exception,
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+
+    logger.exception(
+        "unexpected_error request_id=%s",
+        request_id,
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            error_id=request_id,
+            message="Internal server error",
+        ).model_dump(),
+    )
 
 
 @app.get("/health")
