@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.models import AnalyzeRequest, AnalyzeResponse, Finding
-from app.services.agent import summarize
+from app.services.agent import summarize, propose_patch
 from app.services.github import GitHubReadClient, GitHubReadError
 from app.services.memory import MemoryStore
 
@@ -160,6 +160,60 @@ def recent_ci_runs(owner: str, repository_name: str) -> dict:
             }
             for run in payload.get("workflow_runs", [])
         ],
+    }
+
+
+
+@app.post("/api/propose")
+def propose(request: AnalyzeRequest) -> dict:
+    """Generate a reviewable patch proposal without changing GitHub."""
+
+    github = GitHubReadClient(settings.github_token)
+
+    try:
+        snapshot = github.snapshot(
+            repository=request.repository,
+            ref=request.ref,
+        )
+
+        documents = github.repository_documents(
+            repository=request.repository,
+            ref=snapshot.default_branch,
+        )
+
+    except GitHubReadError as error:
+        raise HTTPException(
+            status_code=422,
+            detail=str(error),
+        ) from error
+
+    if snapshot.readme:
+        documents.append(
+            {
+                "title": "README.md",
+                "kind": "documentation",
+                "path": "README.md",
+                "text": snapshot.readme,
+            }
+        )
+
+    if documents:
+        memory.index(documents)
+
+    context = memory.search(request.objective) if documents else []
+
+    return {
+        "repository": snapshot.full_name,
+        "ref": snapshot.default_branch,
+        "proposal": propose_patch(
+            objective=request.objective,
+            repository=snapshot.full_name,
+            context=context,
+        ),
+        "safety": (
+            "Proposal only: no file, branch, commit, pull request, "
+            "or deployment was created."
+        ),
     }
 
 
