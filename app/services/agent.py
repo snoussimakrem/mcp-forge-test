@@ -1,10 +1,18 @@
-"""Free OpenRouter AI analysis with an offline fallback."""
+"""Free OpenRouter AI analysis with offline-safe fallbacks."""
 
+import json
 import re
 
-from openai import OpenAI, APIError
+from openai import APIError, OpenAI
 
 from app.config import settings
+
+
+def openrouter_client() -> OpenAI:
+    return OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=settings.openrouter_api_key,
+    )
 
 
 def summarize(
@@ -20,12 +28,7 @@ def summarize(
         )
 
     try:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.openrouter_api_key,
-        )
-
-        completion = client.chat.completions.create(
+        completion = openrouter_client().chat.completions.create(
             model=settings.openrouter_model,
             messages=[
                 {
@@ -34,8 +37,7 @@ def summarize(
                         "You are a senior software engineer reviewing a repository. "
                         "You operate in read-only mode. "
                         "Never claim to have changed files, created commits, "
-                        "or opened pull requests. "
-                        "Give concise and safe engineering findings."
+                        "or opened pull requests. Give concise safe findings."
                     ),
                 },
                 {
@@ -60,18 +62,66 @@ def summarize(
         )
 
 
-def propose_patch(
+def normalize_changes(value: object) -> list[dict]:
+    """Keep only valid, reviewable AI change objects."""
+
+    if not isinstance(value, list):
+        return []
+
+    changes = []
+
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+
+        path = item.get("path")
+        rationale = item.get("rationale")
+        unified_diff = item.get("unified_diff")
+
+        if all(
+            isinstance(field, str)
+            for field in (path, rationale, unified_diff)
+        ):
+            changes.append(
+                {
+                    "path": path[:250],
+                    "rationale": rationale[:3000],
+                    "unified_diff": unified_diff[:12000],
+                }
+            )
+
+    return changes[:5]
+
+
+def normalize_strings(value: object, limit: int = 10) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    return [
+        item[:3000]
+        for item in value
+        if isinstance(item, str)
+    ][:limit]
+
+
+def propose_structured(
     objective: str,
     repository: str,
     context: list[dict],
-) -> str:
-    """Generate a proposal only. It never edits files or GitHub."""
+) -> dict:
+    """Create a reviewable proposal. It never edits files or GitHub."""
 
     if not settings.openrouter_api_key:
-        return (
-            "Patch proposal unavailable: add OPENROUTER_API_KEY "
-            "as a Colab Secret."
-        )
+        return {
+            "summary": (
+                "Structured proposal unavailable: add OPENROUTER_API_KEY "
+                "as a Colab Secret."
+            ),
+            "changes": [],
+            "tests": [],
+            "risks": ["No AI provider is configured."],
+            "provider": "offline",
+        }
 
     compact_context = [
         {
@@ -82,24 +132,20 @@ def propose_patch(
     ]
 
     try:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.openrouter_api_key,
-        )
-
-        completion = client.chat.completions.create(
+        completion = openrouter_client().chat.completions.create(
             model=settings.openrouter_model,
             messages=[
                 {
                     "role": "system",
                     "content": (
                         "You are a cautious senior software engineer. "
-                        "Return a patch proposal only. "
-                        "Do not claim the proposal was applied. "
-                        "Use this exact structure: "
-                        "1. Problem, 2. Proposed change, "
-                        "3. Files affected, 4. Unified diff, "
-                        "5. Tests, 6. Risks."
+                        "Return valid JSON only, with exactly this shape: "
+                        '{"summary":"string","changes":[{"path":"string",'
+                        '"rationale":"string","unified_diff":"string"}],'
+                        '"tests":["string"],"risks":["string"]}. '
+                        "Propose reviewable unified diffs only. "
+                        "Never claim files were changed, commits were created, "
+                        "or a pull request was opened."
                     ),
                 },
                 {
@@ -113,12 +159,39 @@ def propose_patch(
             ],
         )
 
-        return completion.choices[0].message.content or (
-            "The AI provider returned an empty proposal."
-        )
+        raw = completion.choices[0].message.content or "{}"
+        raw = raw.strip()
 
-    except APIError as error:
-        return f"Patch proposal unavailable: {error}"
+        if raw.startswith("```json"):
+            raw = raw[len("```json"):]
+
+        if raw.startswith("```"):
+            raw = raw[len("```"):]
+
+        if raw.endswith("```"):
+            raw = raw[:-3]
+
+        parsed = json.loads(raw.strip())
+
+        return {
+            "summary": str(parsed.get("summary", "No summary returned."))[:5000],
+            "changes": normalize_changes(parsed.get("changes")),
+            "tests": normalize_strings(parsed.get("tests")),
+            "risks": normalize_strings(parsed.get("risks")),
+            "provider": "openrouter",
+        }
+
+    except (APIError, ValueError, json.JSONDecodeError) as error:
+        return {
+            "summary": (
+                "The AI provider did not return valid structured JSON. "
+                "No proposal was applied."
+            ),
+            "changes": [],
+            "tests": [],
+            "risks": [str(error)],
+            "provider": "openrouter",
+        }
 
 
 def redact_ci_log(log: str, limit: int = 12000) -> str:
@@ -164,12 +237,7 @@ def diagnose_ci_failure(
         )
 
     try:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.openrouter_api_key,
-        )
-
-        completion = client.chat.completions.create(
+        completion = openrouter_client().chat.completions.create(
             model=settings.openrouter_model,
             messages=[
                 {

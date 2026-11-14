@@ -66,3 +66,22 @@ def test_draft_pr_creation_is_disabled_by_default():
 
     assert response.status_code == 403
     assert "writes are disabled" in response.json()["message"]
+
+
+def test_offline_structured_proposal_has_a_safe_shape(monkeypatch):
+    from app.config import settings
+    from app.services.agent import propose_structured
+
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+
+    proposal = propose_structured(
+        objective="Add tests",
+        repository="example/repository",
+        context=[],
+    )
+
+    assert set(proposal) == {
+        "summary", "changes", "tests", "risks", "provider"
+    }
+    assert isinstance(proposal["changes"], list)
+    assert proposal["provider"] == "offline"

@@ -14,8 +14,14 @@ from app.models import (
     DraftPullRequestRequest,
     ErrorResponse,
     Finding,
+    ProposalResponse,
 )
-from app.services.agent import ( summarize, propose_patch, diagnose_ci_failure, redact_ci_log)
+from app.services.agent import (
+    summarize,
+    propose_structured,
+    diagnose_ci_failure,
+    redact_ci_log,
+)
 from app.services.github import GitHubReadClient, GitHubReadError
 from app.services.memory import MemoryStore
 from app.logging_config import configure_logging
@@ -510,9 +516,9 @@ def create_draft_pull_request(
     }
 
 
-@app.post("/api/propose")
-def propose(request: AnalyzeRequest) -> dict:
-    """Generate a reviewable patch proposal without changing GitHub."""
+@app.post("/api/propose", response_model=ProposalResponse)
+def propose(request: AnalyzeRequest) -> ProposalResponse:
+    """Generate a structured proposal without changing GitHub."""
 
     github = GitHubReadClient(settings.github_token)
 
@@ -548,19 +554,25 @@ def propose(request: AnalyzeRequest) -> dict:
 
     context = memory.search(request.objective) if documents else []
 
-    return {
-        "repository": snapshot.full_name,
-        "ref": snapshot.default_branch,
-        "proposal": propose_patch(
-            objective=request.objective,
-            repository=snapshot.full_name,
-            context=context,
-        ),
-        "safety": (
+    proposal = propose_structured(
+        objective=request.objective,
+        repository=snapshot.full_name,
+        context=context,
+    )
+
+    return ProposalResponse(
+        repository=snapshot.full_name,
+        ref=snapshot.default_branch,
+        summary=proposal["summary"],
+        changes=proposal["changes"],
+        tests=proposal["tests"],
+        risks=proposal["risks"],
+        provider=proposal["provider"],
+        safety=(
             "Proposal only: no file, branch, commit, pull request, "
             "or deployment was created."
         ),
-    }
+    )
 
 
 frontend_directory = Path(__file__).resolve().parents[1] / "frontend"

@@ -59,3 +59,20 @@ class DraftPullRequestRequest(BaseModel):
     body: str = Field(min_length=20, max_length=10_000)
     files: list[FileChange] = Field(min_length=1, max_length=5)
     confirmation: Literal["CREATE_DRAFT_PR"]
+
+
+class ProposedChange(BaseModel):
+    path: str
+    rationale: str
+    unified_diff: str
+
+
+class ProposalResponse(BaseModel):
+    repository: str
+    ref: str
+    summary: str
+    changes: list[ProposedChange]
+    tests: list[str]
+    risks: list[str]
+    provider: str
+    safety: str
