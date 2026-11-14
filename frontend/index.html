@@ -3,88 +3,277 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MCP Forge</title>
-
+  <title>MCP Forge — Proposal Review</title>
   <style>
+    :root {
+      --bg: #080d1b;
+      --panel: #101a30;
+      --panel-2: #151f38;
+      --border: #2b426b;
+      --text: #edf3ff;
+      --muted: #aab9d4;
+      --cyan: #5ce1e6;
+      --green: #6ee7a2;
+      --yellow: #fbd76b;
+      --red: #ff8d95;
+    }
+    * { box-sizing: border-box; }
     body {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 40px 20px;
-      background: #090c17;
-      color: #edf2ff;
-      font-family: Arial, sans-serif;
+      max-width: 1180px; margin: 0 auto; padding: 32px 20px 56px;
+      background: var(--bg); color: var(--text);
+      font: 15px/1.5 Inter, Arial, sans-serif;
     }
-
+    h1 { margin: 0; font-size: 30px; }
+    h2 { margin: 0 0 14px; font-size: 18px; }
+    p { color: var(--muted); }
+    .header {
+      display: flex; justify-content: space-between; gap: 20px;
+      align-items: start; margin-bottom: 24px;
+    }
+    .badge {
+      padding: 7px 11px; border: 1px solid var(--green);
+      color: var(--green); border-radius: 99px; white-space: nowrap;
+      font-size: 13px; font-weight: bold;
+    }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-bottom: 18px;
+    }
+    .full { grid-column: 1 / -1; }
+    label {
+      display: block; margin: 12px 0 5px; color: var(--muted);
+      font-size: 13px; font-weight: bold;
+    }
     input, textarea, button {
-      width: 100%;
-      box-sizing: border-box;
-      margin: 8px 0;
-      padding: 12px;
-      border-radius: 8px;
-      border: 1px solid #34496f;
-      background: #10182b;
-      color: white;
+      width: 100%; border-radius: 8px; padding: 11px 12px;
+      font: inherit;
     }
-
+    input, textarea {
+      border: 1px solid var(--border); background: #091226; color: var(--text);
+    }
+    textarea { min-height: 100px; resize: vertical; }
     button {
-      background: #46dffb;
-      color: #031019;
-      border: 0;
-      font-weight: bold;
-      cursor: pointer;
+      border: 0; cursor: pointer; margin-top: 14px;
+      background: var(--cyan); color: #001419; font-weight: 800;
     }
-
+    button:hover { filter: brightness(1.08); }
+    button.secondary { background: #29436b; color: var(--text); }
+    button.danger { background: var(--yellow); color: #201600; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
     pre {
-      white-space: pre-wrap;
-      background: #10182b;
-      border-radius: 8px;
-      padding: 16px;
+      overflow: auto; min-height: 110px; max-height: 480px;
+      padding: 15px; margin: 0; white-space: pre-wrap;
+      background: #071023; border: 1px solid #20385f; border-radius: 8px;
+      color: #d7e6ff;
+    }
+    .notice {
+      background: #17233d; border-left: 4px solid var(--yellow);
+      padding: 12px; border-radius: 6px; color: #f5df98;
+    }
+    .success { color: var(--green); }
+    .error { color: var(--red); }
+    .small { font-size: 12px; color: var(--muted); }
+    .confirm-row {
+      display: flex; gap: 9px; align-items: center; margin-top: 14px;
+      color: var(--muted);
+    }
+    .confirm-row input { width: auto; }
+    @media (max-width: 800px) {
+      .grid { grid-template-columns: 1fr; }
+      .full { grid-column: auto; }
+      .header { display: block; }
+      .badge { display: inline-block; margin-top: 12px; }
     }
   </style>
 </head>
-
 <body>
-  <h1>MCP Forge</h1>
+  <header class="header">
+    <div>
+      <h1>MCP Forge</h1>
+      <p>GitHub-connected engineering analysis with human-reviewed proposals.</p>
+    </div>
+    <div class="badge">WRITE MODE: LOCKED</div>
+  </header>
 
-  <p>
-    Read-only GitHub repository analysis with Qdrant memory
-    and free AI reasoning.
-  </p>
+  <section class="grid">
+    <article class="panel">
+      <h2>1. Repository analysis</h2>
 
-  <label>GitHub repository</label>
-  <input id="repository" value="snoussimakrem/mcp-forge-test">
+      <label for="repository">GitHub repository</label>
+      <input id="repository" value="snoussimakrem/mcp-forge-test">
 
-  <label>Engineering objective</label>
-  <textarea id="objective">
-Analyze this repository and identify safe engineering improvements.
-  </textarea>
+      <label for="objective">Engineering objective</label>
+      <textarea id="objective">Analyze this repository and identify safe engineering improvements.</textarea>
 
-  <button onclick="analyzeRepository()">
-    Analyze repository
-  </button>
+      <button onclick="analyzeRepository()">Analyze repository</button>
+      <pre id="analysisResult">Ready for analysis.</pre>
+    </article>
 
-  <pre id="result">Ready.</pre>
+    <article class="panel">
+      <h2>2. AI patch proposal</h2>
+      <p class="small">
+        The AI may propose a unified diff, but it cannot change your repository.
+      </p>
+
+      <button class="secondary" onclick="generateProposal()">
+        Generate reviewable proposal
+      </button>
+      <pre id="proposalResult">Generate a proposal after analysis.</pre>
+    </article>
+
+    <article class="panel full">
+      <h2>3. Draft pull request review</h2>
+
+      <div class="notice">
+        Review the AI proposal first. Then paste only the file content you approve.
+        This page requires the exact confirmation phrase before attempting a draft PR.
+        GitHub writes remain blocked until you deliberately enable them later.
+      </div>
+
+      <div class="grid" style="margin-top: 16px">
+        <div>
+          <label for="baseBranch">Base branch</label>
+          <input id="baseBranch" value="main">
+
+          <label for="proposalBranch">New proposal branch</label>
+          <input id="proposalBranch" value="mcp-forge/reviewed-improvement">
+
+          <label for="prTitle">Draft PR title</label>
+          <input id="prTitle" value="Draft: reviewed MCP Forge improvement">
+
+          <label for="prBody">PR description</label>
+          <textarea id="prBody">Created from a human-reviewed MCP Forge proposal. This draft must be reviewed before merging.</textarea>
+        </div>
+
+        <div>
+          <label for="filePath">Approved file path</label>
+          <input id="filePath" value="README.md">
+
+          <label for="fileContent">Approved replacement file content</label>
+          <textarea id="fileContent">Paste only content you personally reviewed here.</textarea>
+
+          <label for="confirmation">Type exactly: CREATE_DRAFT_PR</label>
+          <input id="confirmation" placeholder="Confirmation phrase" oninput="updatePreview()">
+
+          <button class="danger" id="draftButton" disabled onclick="createDraftPR()">
+            Create draft PR only
+          </button>
+        </div>
+      </div>
+
+      <label>Request preview</label>
+      <pre id="requestPreview">Complete the review fields to preview the request.</pre>
+      <pre id="draftResult">No GitHub write request has been made.</pre>
+    </article>
+  </section>
 
   <script>
-    async function analyzeRepository() {
-      const result = document.getElementById("result");
+    const id = (name) => document.getElementById(name);
 
-      result.textContent = "Analyzing repository...";
-
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          repository: document.getElementById("repository").value,
-          objective: document.getElementById("objective").value
-        })
-      });
-
-      const data = await response.json();
-      result.textContent = JSON.stringify(data, null, 2);
+    function requestPayload() {
+      return {
+        repository: id("repository").value.trim(),
+        base: id("baseBranch").value.trim(),
+        branch: id("proposalBranch").value.trim(),
+        title: id("prTitle").value.trim(),
+        body: id("prBody").value.trim(),
+        files: [{
+          path: id("filePath").value.trim(),
+          content: id("fileContent").value
+        }],
+        confirmation: id("confirmation").value.trim()
+      };
     }
+
+    function show(target, data) {
+      id(target).textContent =
+        typeof data === "string" ? data : JSON.stringify(data, null, 2);
+    }
+
+    function updatePreview() {
+      const payload = requestPayload();
+      show("requestPreview", payload);
+
+      id("draftButton").disabled =
+        payload.confirmation !== "CREATE_DRAFT_PR";
+    }
+
+    async function apiCall(url, options, resultTarget) {
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+
+        show(resultTarget, data);
+        return { response, data };
+      } catch (error) {
+        show(resultTarget, {
+          error: "The API request failed.",
+          detail: String(error)
+        });
+      }
+    }
+
+    async function analyzeRepository() {
+      show("analysisResult", "Analyzing repository...");
+
+      await apiCall(
+        "/api/analyze",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repository: id("repository").value.trim(),
+            objective: id("objective").value.trim()
+          })
+        },
+        "analysisResult"
+      );
+    }
+
+    async function generateProposal() {
+      show("proposalResult", "Generating a reviewable proposal...");
+
+      await apiCall(
+        "/api/propose",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repository: id("repository").value.trim(),
+            objective: id("objective").value.trim()
+          })
+        },
+        "proposalResult"
+      );
+    }
+
+    async function createDraftPR() {
+      const payload = requestPayload();
+
+      if (payload.confirmation !== "CREATE_DRAFT_PR") {
+        show("draftResult", "Enter the exact confirmation phrase first.");
+        return;
+      }
+
+      show("draftResult", "Sending an explicitly approved draft-PR request...");
+
+      await apiCall(
+        "/api/pull-requests/draft",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        },
+        "draftResult"
+      );
+    }
+
+    ["repository", "baseBranch", "proposalBranch", "prTitle", "prBody",
+     "filePath", "fileContent", "confirmation"]
+      .forEach((elementId) => id(elementId).addEventListener("input", updatePreview));
+
+    updatePreview();
   </script>
 </body>
 </html>
