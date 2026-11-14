@@ -48,3 +48,21 @@ def test_ci_log_redaction_hides_common_secrets():
     assert "super-secret-token" not in safe_log
     assert "ghp_example_secret" not in safe_log
     assert "[REDACTED]" in safe_log
+
+
+def test_draft_pr_creation_is_disabled_by_default():
+    response = client.post(
+        "/api/pull-requests/draft",
+        json={
+            "repository": "snoussimakrem/mcp-forge-test",
+            "base": "main",
+            "branch": "mcp-forge/example-proposal",
+            "title": "Draft: example safe change",
+            "body": "This is a deliberately reviewed example proposal.",
+            "files": [{"path": "README.md", "content": "Example"}],
+            "confirmation": "CREATE_DRAFT_PR",
+        },
+    )
+
+    assert response.status_code == 403
+    assert "writes are disabled" in response.json()["message"]

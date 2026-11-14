@@ -105,6 +105,96 @@ class GitHubReadClient:
             f"/repos/{repository}/actions/jobs/{job_id}/logs"
         )
 
+
+    def _request(self, method: str, path: str, payload: dict) -> dict:
+        """Make an authenticated GitHub API mutation."""
+
+        if "Authorization" not in self.client.headers:
+            raise GitHubReadError(
+                "GITHUB_TOKEN is required for GitHub write operations."
+            )
+
+        response = self.client.request(method, path, json=payload)
+
+        if response.status_code >= 400:
+            raise GitHubReadError(
+                f"GitHub returned {response.status_code}: {response.text}"
+            )
+
+        return response.json()
+
+    def create_branch(
+        self,
+        repository: str,
+        base: str,
+        branch: str,
+    ) -> None:
+        base_ref = self._get(
+            f"/repos/{repository}/git/ref/heads/{base}"
+        )
+
+        self._request(
+            "POST",
+            f"/repos/{repository}/git/refs",
+            {
+                "ref": f"refs/heads/{branch}",
+                "sha": base_ref["object"]["sha"],
+            },
+        )
+
+    def create_or_update_file(
+        self,
+        repository: str,
+        branch: str,
+        path: str,
+        content: str,
+        message: str,
+    ) -> None:
+        import base64
+
+        payload = {
+            "message": message,
+            "content": base64.b64encode(
+                content.encode("utf-8")
+            ).decode("ascii"),
+            "branch": branch,
+        }
+
+        try:
+            current = self._get(
+                f"/repos/{repository}/contents/{path}?ref={branch}"
+            )
+            payload["sha"] = current["sha"]
+        except GitHubReadError as error:
+            if "GitHub returned 404" not in str(error):
+                raise
+
+        self._request(
+            "PUT",
+            f"/repos/{repository}/contents/{path}",
+            payload,
+        )
+
+    def create_draft_pull_request(
+        self,
+        repository: str,
+        base: str,
+        branch: str,
+        title: str,
+        body: str,
+    ) -> dict:
+        return self._request(
+            "POST",
+            f"/repos/{repository}/pulls",
+            {
+                "title": title,
+                "head": branch,
+                "base": base,
+                "body": body,
+                "draft": True,
+            },
+        )
+
     def snapshot(
         self,
         repository: str,

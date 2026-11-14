@@ -11,6 +11,7 @@ from app.config import settings
 from app.models import (
     AnalyzeRequest,
     AnalyzeResponse,
+    DraftPullRequestRequest,
     ErrorResponse,
     Finding,
 )
@@ -435,6 +436,76 @@ def diagnose_ci_run(
         "safety": (
             "Proposal only: no file, branch, commit, pull request, "
             "workflow rerun, or deployment was created."
+        ),
+    }
+
+
+
+@app.post("/api/pull-requests/draft")
+def create_draft_pull_request(
+    request: DraftPullRequestRequest,
+) -> dict:
+    """Create a draft PR only after deliberate opt-in."""
+
+    if not settings.allow_github_writes:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "GitHub writes are disabled. Set ALLOW_GITHUB_WRITES=true "
+                "only when you are ready to create a draft pull request."
+            ),
+        )
+
+    if request.branch == request.base:
+        raise HTTPException(
+            status_code=422,
+            detail="The proposal branch must be different from the base branch.",
+        )
+
+    github = GitHubReadClient(settings.github_token)
+
+    try:
+        github.create_branch(
+            repository=request.repository,
+            base=request.base,
+            branch=request.branch,
+        )
+
+        for file_change in request.files:
+            github.create_or_update_file(
+                repository=request.repository,
+                branch=request.branch,
+                path=file_change.path,
+                content=file_change.content,
+                message=(
+                    "chore: apply approved MCP Forge proposal "
+                    f"to {file_change.path}"
+                ),
+            )
+
+        pull_request = github.create_draft_pull_request(
+            repository=request.repository,
+            base=request.base,
+            branch=request.branch,
+            title=request.title,
+            body=request.body,
+        )
+
+    except GitHubReadError as error:
+        raise HTTPException(
+            status_code=422,
+            detail=str(error),
+        ) from error
+
+    return {
+        "repository": request.repository,
+        "branch": request.branch,
+        "pull_request_number": pull_request["number"],
+        "pull_request_url": pull_request["html_url"],
+        "draft": pull_request["draft"],
+        "safety": (
+            "A draft pull request was created on a separate branch. "
+            "Nothing was merged into the base branch."
         ),
     }
 
