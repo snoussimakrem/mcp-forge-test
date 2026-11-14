@@ -33,3 +33,18 @@ def test_ci_run_endpoint_has_read_only_contract():
     routes = {route.path for route in app.routes}
 
     assert "/api/ci/{owner}/{repository_name}/{run_id}" in routes
+
+
+def test_ci_log_redaction_hides_common_secrets():
+    from app.services.agent import redact_ci_log
+
+    raw_log = (
+        "OPENROUTER_API_KEY=sk-or-v1-super-secret-token\n"
+        "GITHUB_TOKEN=ghp_example_secret"
+    )
+
+    safe_log = redact_ci_log(raw_log)
+
+    assert "super-secret-token" not in safe_log
+    assert "ghp_example_secret" not in safe_log
+    assert "[REDACTED]" in safe_log

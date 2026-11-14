@@ -14,7 +14,7 @@ from app.models import (
     ErrorResponse,
     Finding,
 )
-from app.services.agent import summarize, propose_patch
+from app.services.agent import ( summarize, propose_patch, diagnose_ci_failure, redact_ci_log)
 from app.services.github import GitHubReadClient, GitHubReadError
 from app.services.memory import MemoryStore
 from app.logging_config import configure_logging
@@ -336,6 +336,106 @@ def ci_run_details(
             for job in jobs
         ],
         "safety": "Read-only inspection: no workflow, file, commit, or pull request was changed.",
+    }
+
+
+
+@app.post("/api/ci/{owner}/{repository_name}/{run_id}/diagnose")
+def diagnose_ci_run(
+    owner: str,
+    repository_name: str,
+    run_id: int,
+) -> dict:
+    """Diagnose failed CI jobs and return a proposal only."""
+
+    repository = f"{owner}/{repository_name}"
+    github = GitHubReadClient(settings.github_token)
+
+    try:
+        run, jobs = github.workflow_run_details(repository, run_id)
+
+    except GitHubReadError as error:
+        raise HTTPException(
+            status_code=422,
+            detail=str(error),
+        ) from error
+
+    failed_jobs = [
+        job for job in jobs
+        if job.get("conclusion") in {"failure", "timed_out", "cancelled"}
+    ]
+
+    if not failed_jobs:
+        return {
+            "repository": repository,
+            "run_id": run_id,
+            "failure_detected": False,
+            "diagnosis": (
+                "No failed job was found in this workflow run. "
+                "No logs were retrieved and no fix was proposed."
+            ),
+            "safety": (
+                "Read-only: no workflow, file, branch, commit, "
+                "pull request, or deployment was changed."
+            ),
+        }
+
+    failed_logs = []
+
+    for job in failed_jobs[:2]:
+        try:
+            failed_logs.append(
+                {
+                    "job": job.get("name", "Unnamed job"),
+                    "log": github.workflow_job_log(
+                        repository,
+                        job["id"],
+                    ),
+                }
+            )
+        except GitHubReadError as error:
+            failed_logs.append(
+                {
+                    "job": job.get("name", "Unnamed job"),
+                    "log": f"Log retrieval failed: {error}",
+                }
+            )
+
+    return {
+        "repository": repository,
+        "run_id": run_id,
+        "failure_detected": True,
+        "failed_jobs": [
+            {
+                "name": job.get("name"),
+                "conclusion": job.get("conclusion"),
+                "steps": [
+                    {
+                        "name": step.get("name"),
+                        "conclusion": step.get("conclusion"),
+                    }
+                    for step in job.get("steps", [])
+                    if step.get("conclusion") != "success"
+                ],
+            }
+            for job in failed_jobs
+        ],
+        "redacted_log_previews": [
+            {
+                "job": item["job"],
+                "log": redact_ci_log(item["log"], limit=2000),
+            }
+            for item in failed_logs
+        ],
+        "proposal": diagnose_ci_failure(
+            repository=repository,
+            run_id=run_id,
+            failed_logs=failed_logs,
+        ),
+        "safety": (
+            "Proposal only: no file, branch, commit, pull request, "
+            "workflow rerun, or deployment was created."
+        ),
     }
 
 

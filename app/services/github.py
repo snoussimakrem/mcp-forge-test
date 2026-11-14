@@ -1,6 +1,8 @@
 """Read-only GitHub client."""
 
 from dataclasses import dataclass
+from io import BytesIO
+from zipfile import BadZipFile, ZipFile
 from pathlib import PurePosixPath
 import base64
 import httpx
@@ -48,6 +50,60 @@ class GitHubReadClient:
             )
 
         return response.json()
+
+    def _get_text(self, path: str) -> str:
+        """Read an API endpoint that returns plain text or a ZIP log archive."""
+
+        response = self.client.get(path, follow_redirects=True)
+
+        if response.status_code >= 400:
+            raise GitHubReadError(
+                f"GitHub returned {response.status_code}: {response.text}"
+            )
+
+        content = response.content
+
+        if content.startswith(b"PK"):
+            try:
+                with ZipFile(BytesIO(content)) as archive:
+                    parts = []
+                    total_size = 0
+
+                    for entry in archive.infolist()[:20]:
+                        if entry.is_dir() or entry.file_size > 1_000_000:
+                            continue
+
+                        total_size += entry.file_size
+
+                        if total_size > 2_000_000:
+                            break
+
+                        parts.append(
+                            archive.read(entry).decode(
+                                "utf-8",
+                                errors="replace",
+                            )
+                        )
+
+                    return "\n".join(parts)
+
+            except BadZipFile as error:
+                raise GitHubReadError(
+                    "GitHub returned an unreadable workflow log archive."
+                ) from error
+
+        return content.decode("utf-8", errors="replace")
+
+    def workflow_job_log(
+        self,
+        repository: str,
+        job_id: int,
+    ) -> str:
+        """Read one GitHub Actions job log without modifying GitHub."""
+
+        return self._get_text(
+            f"/repos/{repository}/actions/jobs/{job_id}/logs"
+        )
 
     def snapshot(
         self,
