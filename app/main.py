@@ -262,6 +262,83 @@ def recent_ci_runs(owner: str, repository_name: str) -> dict:
 
 
 
+
+@app.get("/api/ci/{owner}/{repository_name}/{run_id}")
+def ci_run_details(
+    owner: str,
+    repository_name: str,
+    run_id: int,
+) -> dict:
+    """Inspect one GitHub Actions run without changing GitHub."""
+
+    repository = f"{owner}/{repository_name}"
+
+    try:
+        run, jobs = GitHubReadClient(
+            settings.github_token
+        ).workflow_run_details(repository, run_id)
+
+    except GitHubReadError as error:
+        raise HTTPException(
+            status_code=422,
+            detail=str(error),
+        ) from error
+
+    conclusion = run.get("conclusion")
+
+    if run.get("status") != "completed":
+        diagnosis = "This workflow is still running."
+    elif conclusion == "success":
+        diagnosis = (
+            "CI completed successfully. No fix is proposed because "
+            "the workflow has no reported failure."
+        )
+    elif conclusion in {"failure", "timed_out", "cancelled"}:
+        diagnosis = (
+            "CI did not complete successfully. Inspect the failed job "
+            "and its failed step before generating a fix proposal."
+        )
+    else:
+        diagnosis = (
+            "CI completed with a non-success conclusion. "
+            "Review the jobs and steps below."
+        )
+
+    return {
+        "repository": repository,
+        "run_id": run_id,
+        "name": run.get("name"),
+        "status": run.get("status"),
+        "conclusion": conclusion,
+        "branch": run.get("head_branch"),
+        "event": run.get("event"),
+        "url": run.get("html_url"),
+        "created_at": run.get("created_at"),
+        "updated_at": run.get("updated_at"),
+        "diagnosis": diagnosis,
+        "jobs": [
+            {
+                "name": job.get("name"),
+                "status": job.get("status"),
+                "conclusion": job.get("conclusion"),
+                "started_at": job.get("started_at"),
+                "completed_at": job.get("completed_at"),
+                "steps": [
+                    {
+                        "name": step.get("name"),
+                        "status": step.get("status"),
+                        "conclusion": step.get("conclusion"),
+                        "number": step.get("number"),
+                    }
+                    for step in job.get("steps", [])
+                ],
+            }
+            for job in jobs
+        ],
+        "safety": "Read-only inspection: no workflow, file, commit, or pull request was changed.",
+    }
+
+
 @app.post("/api/propose")
 def propose(request: AnalyzeRequest) -> dict:
     """Generate a reviewable patch proposal without changing GitHub."""

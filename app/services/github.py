@@ -141,3 +141,20 @@ class GitHubReadClient:
                 continue
 
         return documents
+
+    def workflow_run_details(
+        self,
+        repository: str,
+        run_id: int,
+    ) -> tuple[dict, list[dict]]:
+        """Return one workflow run and its jobs, read-only."""
+
+        run = self._get(
+            f"/repos/{repository}/actions/runs/{run_id}"
+        )
+
+        jobs_payload = self._get(
+            f"/repos/{repository}/actions/runs/{run_id}/jobs?per_page=100"
+        )
+
+        return run, jobs_payload.get("jobs", [])
