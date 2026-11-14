@@ -120,6 +120,9 @@
         Generate reviewable proposal
       </button>
       <pre id="proposalResult">Generate a proposal after analysis.</pre>
+      <div id="proposalReview" class="notice" style="margin-top: 14px">
+        No structured proposal selected yet.
+      </div>
     </article>
 
     <article class="panel full">
@@ -170,6 +173,7 @@
 
   <script>
     const id = (name) => document.getElementById(name);
+    let latestProposal = null;
 
     function requestPayload() {
       return {
@@ -231,10 +235,110 @@
       );
     }
 
-    async function generateProposal() {
-      show("proposalResult", "Generating a reviewable proposal...");
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
 
-      await apiCall(
+    function slugify(value) {
+      const slug = String(value ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 55);
+
+      return slug || "reviewed-improvement";
+    }
+
+    function renderProposalReview(proposal) {
+      const panel = id("proposalReview");
+      const changes = Array.isArray(proposal.changes) ? proposal.changes : [];
+
+      if (!changes.length) {
+        panel.innerHTML = `
+          <strong>No file changes were proposed.</strong><br>
+          Review the summary, tests, and risks in the JSON output.
+          Nothing can be sent to GitHub from this proposal.
+        `;
+        return;
+      }
+
+      panel.innerHTML = `
+        <strong>Review before any write:</strong>
+        ${changes.map((change, index) => `
+          <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #2b426b">
+            <code>${escapeHtml(change.path)}</code><br>
+            <span class="small">${escapeHtml(change.rationale)}</span><br>
+            <button class="secondary" onclick="selectProposalChange(${index})">
+              Use this change in the draft-PR review form
+            </button>
+          </div>
+        `).join("")}
+      `;
+    }
+
+    function selectProposalChange(index) {
+      const change = latestProposal?.changes?.[index];
+
+      if (!change) {
+        return;
+      }
+
+      const tests = Array.isArray(latestProposal.tests)
+        ? latestProposal.tests.map((item) => `- ${item}`).join("\n")
+        : "- Add validation commands";
+
+      const risks = Array.isArray(latestProposal.risks)
+        ? latestProposal.risks.map((item) => `- ${item}`).join("\n")
+        : "- Review the generated diff carefully.";
+
+      id("filePath").value = change.path;
+      id("proposalBranch").value =
+        `mcp-forge/${slugify(latestProposal.summary)}`;
+      id("prTitle").value =
+        `Draft: ${String(latestProposal.summary).slice(0, 85)}`;
+
+      id("prBody").value = [
+        "## MCP Forge reviewed proposal",
+        "",
+        "### Summary",
+        latestProposal.summary,
+        "",
+        "### Rationale",
+        change.rationale,
+        "",
+        "### Validation",
+        tests,
+        "",
+        "### Risks",
+        risks,
+        "",
+        "### Human review requirement",
+        "The file content was not generated automatically. "
+        + "Paste only the final content you personally reviewed."
+      ].join("\n");
+
+      id("fileContent").value =
+        "# Paste the complete reviewed file content here.\n"
+        + "# The AI diff is visible above for comparison.\n";
+
+      show(
+        "draftResult",
+        "Proposal selected. Review the unified diff, then paste the full "
+        + "approved file content. GitHub writes are still locked."
+      );
+
+      updatePreview();
+    }
+
+    async function generateProposal() {
+      show("proposalResult", "Generating a structured reviewable proposal...");
+
+      const result = await apiCall(
         "/api/propose",
         {
           method: "POST",
@@ -246,6 +350,11 @@
         },
         "proposalResult"
       );
+
+      if (result?.response?.ok && result.data) {
+        latestProposal = result.data;
+        renderProposalReview(result.data);
+      }
     }
 
     async function createDraftPR() {
